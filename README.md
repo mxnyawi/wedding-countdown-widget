@@ -30,11 +30,17 @@ iPhone with no Mac, no Apple Developer account, and no App Store review.
    the `CONFIG` block at the top are only the first-run defaults.
 
    **To use a photo as the background:** run the script and choose
-   **"Save & choose photo…"** — the iOS photo picker opens, you pick a picture,
-   and it's saved next to the script. A dark scrim is drawn over it so the white
-   text stays readable. Pick **"Remove photo (use theme)"** to go back to the
-   gradient. (The first time, iOS will ask Scriptable for Photos permission —
-   allow it.)
+   **"Save & set a photo for a size…"**, then pick **which widget size** the
+   photo is for (Small / Medium / Large) — the iOS photo picker opens and the
+   image is saved for that size. A dark scrim is drawn over it so the white text
+   stays readable.
+
+   **Why per size?** Small widgets are ≈ square; Medium/Large are wide. iOS crops
+   to fill, so a photo that looks great on the Large widget gets badly cropped on
+   the Small one. Set a separately-framed photo for each size you actually use.
+   Choose **"Remove a photo…"** → a size (or **All sizes**) to clear them and fall
+   back to the theme gradient. (First time, iOS asks Scriptable for Photos
+   permission — allow it.)
 4. **Add the widget to your Home Screen**
    - Long-press an empty area of the Home Screen → tap **＋** (top-left).
    - Search **Scriptable** → choose **Small**, **Medium**, or **Large** → **Add Widget**.
@@ -96,9 +102,9 @@ app. (Ask and I'll generate the full Xcode project + submission checklist.)
 - **Date / names / theme / photo:** run the script in the Scriptable app and use
   the built-in editor — **no code change required.** Priority order is:
   widget **Parameter** field  ▸  saved settings  ▸  `CONFIG` defaults.
-- **Background photo:** choose one via the editor; it's stored as
-  `wedding-countdown-bg.jpg` in Scriptable's folder and darkened automatically.
-  Tune the **Photo darkness** value if text is hard to read.
+- **Background photo (per size):** choose one per widget size via the editor;
+  each is stored as `wedding-countdown-bg-<size>.jpg` in Scriptable's folder and
+  darkened automatically. Tune the **Photo darkness** value if text is hard to read.
 - **New colors:** edit the `THEMES` map to add your own palette (hex values).
 - **Wording:** "days to go" / "days married 💛" / "Today! 🎉" live in
   `buildWidget()`.

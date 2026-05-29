@@ -63,8 +63,7 @@ function loadSettings() {
     weddingDate: CONFIG.weddingDate,
     coupleNames: CONFIG.coupleNames,
     theme: CONFIG.theme,
-    useBackgroundImage: false, // set true after picking a photo in the editor
-    overlay: 0.45,             // 0 = photo as-is, 1 = fully black scrim
+    overlay: 0.45, // dark scrim over photos: 0 = photo as-is, 1 = fully black
   };
   try {
     const { fm, path } = settingsFile();
@@ -87,15 +86,20 @@ function saveSettings(obj) {
   } catch (e) { return false; }
 }
 
-// ---- Background photo -------------------------------------------------------
-function bgImagePath() {
+// ---- Background photo (one per widget size) ---------------------------------
+// Each widget size crops differently (small ≈ square, medium/large ≈ wide), so
+// we store a separate photo per family: bg-small.jpg / bg-medium.jpg / bg-large.jpg
+const PHOTO_SIZES = ["small", "medium", "large"];
+
+function bgImagePath(family) {
   let fm;
   try { fm = FileManager.iCloud(); } catch (e) { fm = FileManager.local(); }
-  return { fm, path: fm.joinPath(fm.documentsDirectory(), BG_FILENAME) };
+  const name = BG_FILENAME.replace(".jpg", `-${family}.jpg`);
+  return { fm, path: fm.joinPath(fm.documentsDirectory(), name) };
 }
 
-// Let the user pick a photo and store it alongside the script.
-async function pickBackgroundImage() {
+// Let the user pick a photo for a specific widget size and store it.
+async function pickBackgroundImage(family) {
   let img;
   try {
     img = await Photos.fromLibrary(); // opens the system photo picker
@@ -103,14 +107,14 @@ async function pickBackgroundImage() {
     return false; // user cancelled the picker
   }
   if (!img) return false;
-  const { fm, path } = bgImagePath();
+  const { fm, path } = bgImagePath(family);
   fm.writeImage(path, img);
   return true;
 }
 
-function loadBackgroundImage() {
+function loadBackgroundImage(family) {
   try {
-    const { fm, path } = bgImagePath();
+    const { fm, path } = bgImagePath(family);
     if (!fm.fileExists(path)) return null;
     if (fm.isFileStoredIniCloud && fm.isFileStoredIniCloud(path) && !fm.isFileDownloaded(path)) {
       fm.downloadFileFromiCloud(path);
@@ -119,11 +123,34 @@ function loadBackgroundImage() {
   } catch (e) { return null; }
 }
 
-function removeBackgroundImage() {
+function removeBackgroundImage(family) {
   try {
-    const { fm, path } = bgImagePath();
+    const { fm, path } = bgImagePath(family);
     if (fm.fileExists(path)) fm.remove(path);
   } catch (e) { /* ignore */ }
+}
+
+// Which sizes currently have a photo saved?
+function sizesWithPhoto() {
+  return PHOTO_SIZES.filter((f) => {
+    try {
+      const { fm, path } = bgImagePath(f);
+      return fm.fileExists(path);
+    } catch (e) { return false; }
+  });
+}
+
+// Small picker alert that returns "small" | "medium" | "large" | "all" | null.
+async function chooseSizePrompt(title, sizes, includeAll) {
+  const a = new Alert();
+  a.title = title;
+  for (const s of sizes) a.addAction(s.charAt(0).toUpperCase() + s.slice(1));
+  if (includeAll) a.addAction("All sizes");
+  a.addCancelAction("Cancel");
+  const i = await a.presentAlert();
+  if (i === -1) return null;
+  if (includeAll && i === sizes.length) return "all";
+  return sizes[i] || null;
 }
 
 // Draw a translucent dark scrim over the photo so light text stays readable.
@@ -147,19 +174,21 @@ function darkenImage(img, alpha) {
 async function editSettings() {
   const s = loadSettings();
 
-  const hasPhoto = !!loadBackgroundImage();
+  const photoSizes = sizesWithPhoto();
+  const hasAnyPhoto = photoSizes.length > 0;
 
   const a = new Alert();
   a.title = "💍 Wedding Countdown";
-  a.message = "Set your details. Date format: YYYY-MM-DD HH:MM (24h).";
+  const photoStatus = hasAnyPhoto ? `Photos set for: ${photoSizes.join(", ")}.` : "No photo set (using theme gradient).";
+  a.message = `Set your details. Date format: YYYY-MM-DD HH:MM (24h).\n${photoStatus}`;
   a.addTextField("Date (YYYY-MM-DD HH:MM)", toInputFormat(s.weddingDate));
   a.addTextField("Couple names", s.coupleNames);
   a.addTextField("Theme (rose/sunset/midnight/sage/gold)", s.theme);
   // Photo scrim 0–100 (higher = darker, more readable text over busy photos)
   a.addTextField("Photo darkness 0-100", String(Math.round((s.overlay ?? 0.45) * 100)));
   a.addAction("Save");
-  a.addAction(hasPhoto ? "Save & change photo…" : "Save & choose photo…");
-  if (hasPhoto) a.addDestructiveAction("Remove photo (use theme)");
+  a.addAction("Save & set a photo for a size…");
+  if (hasAnyPhoto) a.addDestructiveAction("Remove a photo…");
   a.addCancelAction("Cancel");
 
   const idx = await a.presentAlert();
@@ -188,19 +217,23 @@ async function editSettings() {
     coupleNames: namesIn || s.coupleNames,
     theme: THEMES[themeIn] ? themeIn : s.theme,
     overlay,
-    useBackgroundImage: hasPhoto, // may change below based on the chosen action
   };
+  saveSettings(next);
 
-  // Action 0 = Save. Action 1 = choose/change photo. Action 2 (if present) = remove photo.
+  // Action 0 = Save only. Action 1 = set a photo for a chosen size.
+  // Action 2 (only when photos exist) = remove a photo for a chosen size.
   if (idx === 1) {
-    const picked = await pickBackgroundImage();
-    next.useBackgroundImage = picked || hasPhoto;
-  } else if (idx === 2 && hasPhoto) {
-    removeBackgroundImage();
-    next.useBackgroundImage = false;
+    const size = await chooseSizePrompt("Set photo for which widget size?", PHOTO_SIZES, false);
+    if (size) await pickBackgroundImage(size);
+  } else if (idx === 2 && hasAnyPhoto) {
+    const size = await chooseSizePrompt("Remove photo for which size?", photoSizes, true);
+    if (size === "all") {
+      for (const f of photoSizes) removeBackgroundImage(f);
+    } else if (size) {
+      removeBackgroundImage(size);
+    }
   }
 
-  saveSettings(next);
   return next;
 }
 
@@ -293,14 +326,13 @@ function buildWidget(settings) {
     return buildAccessory(w, d, family);
   }
 
-  // Photo background: load the saved picture, darken it for legibility, and
-  // use it instead of the gradient. Falls back to the gradient if missing.
-  if (settings.useBackgroundImage) {
-    const photo = loadBackgroundImage();
-    if (photo) {
-      const overlay = typeof settings.overlay === "number" ? settings.overlay : 0.45;
-      w.backgroundImage = darkenImage(photo, overlay);
-    }
+  // Photo background: load the picture saved for THIS widget size, darken it for
+  // legibility, and use it instead of the gradient. Falls back to the gradient
+  // if no photo is set for this size.
+  const photo = loadBackgroundImage(family);
+  if (photo) {
+    const overlay = typeof settings.overlay === "number" ? settings.overlay : 0.45;
+    w.backgroundImage = darkenImage(photo, overlay);
   }
 
   const pad = family === "small" ? 12 : 18;
