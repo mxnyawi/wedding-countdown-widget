@@ -49,6 +49,7 @@ const THEMES = {
 //  Priority:  widget Parameter  >  saved settings file  >  CONFIG defaults.
 // ============================================================================
 const SETTINGS_FILENAME = "wedding-countdown-settings.json";
+const BG_FILENAME = "wedding-countdown-bg.jpg";
 
 function settingsFile() {
   let fm;
@@ -62,6 +63,8 @@ function loadSettings() {
     weddingDate: CONFIG.weddingDate,
     coupleNames: CONFIG.coupleNames,
     theme: CONFIG.theme,
+    useBackgroundImage: false, // set true after picking a photo in the editor
+    overlay: 0.45,             // 0 = photo as-is, 1 = fully black scrim
   };
   try {
     const { fm, path } = settingsFile();
@@ -84,9 +87,67 @@ function saveSettings(obj) {
   } catch (e) { return false; }
 }
 
+// ---- Background photo -------------------------------------------------------
+function bgImagePath() {
+  let fm;
+  try { fm = FileManager.iCloud(); } catch (e) { fm = FileManager.local(); }
+  return { fm, path: fm.joinPath(fm.documentsDirectory(), BG_FILENAME) };
+}
+
+// Let the user pick a photo and store it alongside the script.
+async function pickBackgroundImage() {
+  let img;
+  try {
+    img = await Photos.fromLibrary(); // opens the system photo picker
+  } catch (e) {
+    return false; // user cancelled the picker
+  }
+  if (!img) return false;
+  const { fm, path } = bgImagePath();
+  fm.writeImage(path, img);
+  return true;
+}
+
+function loadBackgroundImage() {
+  try {
+    const { fm, path } = bgImagePath();
+    if (!fm.fileExists(path)) return null;
+    if (fm.isFileStoredIniCloud && fm.isFileStoredIniCloud(path) && !fm.isFileDownloaded(path)) {
+      fm.downloadFileFromiCloud(path);
+    }
+    return fm.readImage(path);
+  } catch (e) { return null; }
+}
+
+function removeBackgroundImage() {
+  try {
+    const { fm, path } = bgImagePath();
+    if (fm.fileExists(path)) fm.remove(path);
+  } catch (e) { /* ignore */ }
+}
+
+// Draw a translucent dark scrim over the photo so light text stays readable.
+function darkenImage(img, alpha) {
+  try {
+    const ctx = new DrawContext();
+    ctx.size = img.size;
+    ctx.respectScreenScale = true;
+    ctx.opaque = false;
+    const rect = new Rect(0, 0, img.size.width, img.size.height);
+    ctx.drawImageInRect(img, rect);
+    ctx.setFillColor(new Color("#000000", alpha));
+    ctx.fillRect(rect);
+    return ctx.getImage();
+  } catch (e) {
+    return img; // if drawing fails, fall back to the raw photo
+  }
+}
+
 // In-app editor: prompt for date / names / theme and persist them.
 async function editSettings() {
   const s = loadSettings();
+
+  const hasPhoto = !!loadBackgroundImage();
 
   const a = new Alert();
   a.title = "💍 Wedding Countdown";
@@ -94,7 +155,11 @@ async function editSettings() {
   a.addTextField("Date (YYYY-MM-DD HH:MM)", toInputFormat(s.weddingDate));
   a.addTextField("Couple names", s.coupleNames);
   a.addTextField("Theme (rose/sunset/midnight/sage/gold)", s.theme);
+  // Photo scrim 0–100 (higher = darker, more readable text over busy photos)
+  a.addTextField("Photo darkness 0-100", String(Math.round((s.overlay ?? 0.45) * 100)));
   a.addAction("Save");
+  a.addAction(hasPhoto ? "Save & change photo…" : "Save & choose photo…");
+  if (hasPhoto) a.addDestructiveAction("Remove photo (use theme)");
   a.addCancelAction("Cancel");
 
   const idx = await a.presentAlert();
@@ -103,6 +168,7 @@ async function editSettings() {
   const dateIn = a.textFieldValue(0).trim();
   const namesIn = a.textFieldValue(1).trim();
   const themeIn = a.textFieldValue(2).trim().toLowerCase();
+  const darkIn = parseInt(a.textFieldValue(3), 10);
 
   // Validate the date before saving so a typo can't break the widget.
   const parsed = parseDateInput(dateIn);
@@ -115,11 +181,25 @@ async function editSettings() {
     return loadSettings();
   }
 
+  const overlay = isNaN(darkIn) ? (s.overlay ?? 0.45) : Math.min(1, Math.max(0, darkIn / 100));
+
   const next = {
     weddingDate: parsed.iso,
     coupleNames: namesIn || s.coupleNames,
     theme: THEMES[themeIn] ? themeIn : s.theme,
+    overlay,
+    useBackgroundImage: hasPhoto, // may change below based on the chosen action
   };
+
+  // Action 0 = Save. Action 1 = choose/change photo. Action 2 (if present) = remove photo.
+  if (idx === 1) {
+    const picked = await pickBackgroundImage();
+    next.useBackgroundImage = picked || hasPhoto;
+  } else if (idx === 2 && hasPhoto) {
+    removeBackgroundImage();
+    next.useBackgroundImage = false;
+  }
+
   saveSettings(next);
   return next;
 }
@@ -200,7 +280,7 @@ function buildWidget(settings) {
 
   const w = new ListWidget();
 
-  // Gradient background
+  // Gradient background (also the fallback if a photo is set but can't load).
   const grad = new LinearGradient();
   grad.colors = [new Color(theme.bg[0]), new Color(theme.bg[1])];
   grad.locations = [0, 1];
@@ -211,6 +291,16 @@ function buildWidget(settings) {
   // Lock-screen accessory families get a compact treatment.
   if (family.startsWith("accessory")) {
     return buildAccessory(w, d, family);
+  }
+
+  // Photo background: load the saved picture, darken it for legibility, and
+  // use it instead of the gradient. Falls back to the gradient if missing.
+  if (settings.useBackgroundImage) {
+    const photo = loadBackgroundImage();
+    if (photo) {
+      const overlay = typeof settings.overlay === "number" ? settings.overlay : 0.45;
+      w.backgroundImage = darkenImage(photo, overlay);
+    }
   }
 
   const pad = family === "small" ? 12 : 18;

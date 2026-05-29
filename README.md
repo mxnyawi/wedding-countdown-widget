@@ -21,10 +21,20 @@ iPhone with no Mac, no Apple Developer account, and no App Store review.
    - **Couple names** — e.g. `N & T`
    - **Theme** — `rose` / `sunset` / `midnight` / `sage` / `gold`
 
+   - **Photo darkness 0-100** — how dark the scrim over your photo is (higher
+     = more readable text over busy photos; default 45)
+
    Tap **Save** and it's stored to a settings file (synced via iCloud). The
    Home Screen widget reads from there, so **when the date or details change you
    never touch the code** — just run the script again and edit. The values in
    the `CONFIG` block at the top are only the first-run defaults.
+
+   **To use a photo as the background:** run the script and choose
+   **"Save & choose photo…"** — the iOS photo picker opens, you pick a picture,
+   and it's saved next to the script. A dark scrim is drawn over it so the white
+   text stays readable. Pick **"Remove photo (use theme)"** to go back to the
+   gradient. (The first time, iOS will ask Scriptable for Photos permission —
+   allow it.)
 4. **Add the widget to your Home Screen**
    - Long-press an empty area of the Home Screen → tap **＋** (top-left).
    - Search **Scriptable** → choose **Small**, **Medium**, or **Large** → **Add Widget**.
@@ -83,9 +93,12 @@ app. (Ask and I'll generate the full Xcode project + submission checklist.)
 ---
 
 ## Customizing
-- **Date / names / theme:** run the script in the Scriptable app and use the
-  built-in editor — **no code change required.** Priority order is:
+- **Date / names / theme / photo:** run the script in the Scriptable app and use
+  the built-in editor — **no code change required.** Priority order is:
   widget **Parameter** field  ▸  saved settings  ▸  `CONFIG` defaults.
+- **Background photo:** choose one via the editor; it's stored as
+  `wedding-countdown-bg.jpg` in Scriptable's folder and darkened automatically.
+  Tune the **Photo darkness** value if text is hard to read.
 - **New colors:** edit the `THEMES` map to add your own palette (hex values).
 - **Wording:** "days to go" / "days married 💛" / "Today! 🎉" live in
   `buildWidget()`.
